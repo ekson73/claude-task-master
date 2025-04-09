@@ -5,11 +5,16 @@
 
 import { z } from 'zod';
 import {
+	getProjectRootFromSession,
 	handleApiResult,
-	createErrorResponse,
-	getProjectRootFromSession
+	createErrorResponse
 } from './utils.js';
 import { parsePRDDirect } from '../core/task-master-core.js';
+import {
+	resolveProjectPaths,
+	findPRDDocumentPath,
+	resolveTasksOutputPath
+} from '../core/utils/path-utils.js';
 
 /**
  * Register the parsePRD tool with the MCP server
@@ -23,6 +28,7 @@ export function registerParsePRDTool(server) {
 		parameters: z.object({
 			input: z
 				.string()
+				.optional()
 				.default('scripts/prd.txt')
 				.describe('Absolute path to the PRD document file (.txt, .md, etc.)'),
 			numTasks: z
@@ -35,7 +41,7 @@ export function registerParsePRDTool(server) {
 				.string()
 				.optional()
 				.describe(
-					'Output absolute path for tasks.json file (default: tasks/tasks.json)'
+					'Output path for tasks.json file (default: tasks/tasks.json)'
 				),
 			force: z
 				.boolean()
@@ -52,17 +58,48 @@ export function registerParsePRDTool(server) {
 			try {
 				log.info(`Parsing PRD with args: ${JSON.stringify(args)}`);
 
+				// Get project root from session
 				let rootFolder = getProjectRootFromSession(session, log);
-
 				if (!rootFolder && args.projectRoot) {
 					rootFolder = args.projectRoot;
 					log.info(`Using project root from args as fallback: ${rootFolder}`);
 				}
 
+				if (!rootFolder) {
+					return createErrorResponse(
+						'Could not determine project root. Please provide it explicitly or ensure your session contains valid root information.'
+					);
+				}
+
+				// Handle auto-detection of paths when not explicitly provided
+				let inputPath = args.input;
+				let outputPath = args.output;
+
+				// If input not provided, try to auto-detect it
+				if (!inputPath) {
+					inputPath = findPRDDocumentPath(rootFolder, null, log);
+					if (!inputPath) {
+						return createErrorResponse(
+							'No PRD document found. Please provide a valid input file path.'
+						);
+					}
+					log.info(`Auto-detected PRD document: ${inputPath}`);
+				}
+
+				// If output not provided, use default
+				if (!outputPath) {
+					outputPath = resolveTasksOutputPath(rootFolder, null, log);
+					log.info(`Using default tasks output path: ${outputPath}`);
+				}
+
+				// Call the direct function with fully resolved parameters
 				const result = await parsePRDDirect(
 					{
 						projectRoot: rootFolder,
-						...args
+						input: inputPath,
+						output: outputPath,
+						numTasks: args.numTasks,
+						force: args.force
 					},
 					log,
 					{ session }

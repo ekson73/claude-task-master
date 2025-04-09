@@ -46,34 +46,42 @@ export async function parsePRDDirect(args, log, context = {}) {
 			};
 		}
 
-		// Parameter validation and path resolution
-		if (!args.input) {
-			const errorMessage =
-				'No input file specified. Please provide an input PRD document path.';
+		// Validate required parameters
+		if (!args.projectRoot) {
+			const errorMessage = 'Project root is required for parsePRDDirect';
 			log.error(errorMessage);
 			return {
 				success: false,
-				error: { code: 'MISSING_INPUT_FILE', message: errorMessage },
+				error: { code: 'MISSING_PROJECT_ROOT', message: errorMessage },
 				fromCache: false
 			};
 		}
 
-		// Resolve input path (relative to project root if provided)
-		const projectRoot = args.projectRoot || process.cwd();
+		if (!args.input) {
+			const errorMessage = 'Input file path is required for parsePRDDirect';
+			log.error(errorMessage);
+			return {
+				success: false,
+				error: { code: 'MISSING_INPUT_PATH', message: errorMessage },
+				fromCache: false
+			};
+		}
+
+		if (!args.output) {
+			const errorMessage = 'Output file path is required for parsePRDDirect';
+			log.error(errorMessage);
+			return {
+				success: false,
+				error: { code: 'MISSING_OUTPUT_PATH', message: errorMessage },
+				fromCache: false
+			};
+		}
+
+		// Resolve input path (expecting absolute path or path relative to project root)
+		const projectRoot = args.projectRoot;
 		const inputPath = path.isAbsolute(args.input)
 			? args.input
 			: path.resolve(projectRoot, args.input);
-
-		// Determine output path
-		let outputPath;
-		if (args.output) {
-			outputPath = path.isAbsolute(args.output)
-				? args.output
-				: path.resolve(projectRoot, args.output);
-		} else {
-			// Default to tasks/tasks.json in the project root
-			outputPath = path.resolve(projectRoot, 'tasks', 'tasks.json');
-		}
 
 		// Verify input file exists
 		if (!fs.existsSync(inputPath)) {
@@ -84,6 +92,18 @@ export async function parsePRDDirect(args, log, context = {}) {
 				error: { code: 'INPUT_FILE_NOT_FOUND', message: errorMessage },
 				fromCache: false
 			};
+		}
+
+		// Resolve output path (expecting absolute path or path relative to project root)
+		const outputPath = path.isAbsolute(args.output)
+			? args.output
+			: path.resolve(projectRoot, args.output);
+
+		// Ensure output directory exists
+		const outputDir = path.dirname(outputPath);
+		if (!fs.existsSync(outputDir)) {
+			log.info(`Creating output directory: ${outputDir}`);
+			fs.mkdirSync(outputDir, { recursive: true });
 		}
 
 		// Parse number of tasks - handle both string and number values
